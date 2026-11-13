@@ -24,25 +24,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: TypeScript type-check
-        run: npx tsc --noEmit
+        run: ./node_modules/.bin/tsc --noEmit
 
       - name: ESLint
-        run: npx eslint . --ext .ts,.tsx
+        run: ./node_modules/.bin/eslint . --ext .ts,.tsx
 
       - name: Expo Doctor
         run: npx expo-doctor
@@ -90,34 +90,34 @@ jobs:
       - android-signing-check
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b36c23c0d998641eff861008f374ee103c25ac73 # v4.4.0
         with:
           distribution: 'temurin'
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
       - name: Install Android build tools
         run: sdkmanager --install "build-tools;35.0.0"
 
       - name: Generate Android project (Expo Prebuild)
-        run: npx expo prebuild --clean -p android
+        run: ./node_modules/.bin/expo prebuild --clean -p android
 
       # ---------- Path A: Signed release APK ----------
       - name: Write release keystore
@@ -172,7 +172,7 @@ jobs:
 
       - name: Upload signed release APK
         if: needs.android-signing-check.outputs.signing_configured == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: SMSM-Android
           path: android/app/build/outputs/apk/release/SMSM-Android.apk
@@ -216,7 +216,7 @@ jobs:
 
       - name: Upload debug validation APK
         if: needs.android-signing-check.outputs.signing_configured == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: SMSM-Android-nosign-validation
           path: android/app/build/outputs/apk/debug/SMSM-Android-validation.apk
@@ -229,22 +229,22 @@ jobs:
     needs: quality
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate iOS project (Expo Prebuild)
-        run: npx expo prebuild --clean -p ios
+        run: ./node_modules/.bin/expo prebuild --clean -p ios
 
       - name: Install CocoaPods
         run: sudo gem install cocoapods -N
@@ -293,7 +293,7 @@ jobs:
           echo "Simulator app found: $APP_PATH" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload iOS simulator .app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: SMSM-iOS-Simulator
           path: ${{ steps.locate-app.outputs.app_path }}
