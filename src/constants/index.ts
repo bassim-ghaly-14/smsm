@@ -3,7 +3,7 @@
  */
 
 export const APP_NAME = 'SMSM';
-export const APP_TAGLINE = 'Your Voice, Your Actions.';
+export const APP_TAGLINE = 'Speak Less, Get More';
 
 /**
  * Supported languages for the UI.

@@ -4,7 +4,7 @@
     "slug": "smsm",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/smsm-logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
@@ -13,10 +13,10 @@
     "android": {
       "package": "com.smsm.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#171521",
+        "foregroundImage": "./assets/images/smsm-adaptive-foreground.png",
+        "backgroundImage": "./assets/images/smsm-adaptive-background.png",
+        "monochromeImage": "./assets/images/smsm-adaptive-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },

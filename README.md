@@ -1,6 +1,6 @@
 # SMSM
 
-**SMSM — Your Voice, Your Actions.**
+**SMSM — Speak Less, Get More**
 
 A voice-controlled mobile assistant for Android and iOS.
 

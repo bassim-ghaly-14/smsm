@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSMSMStore } from '@/store';
+import { brand } from '@/constants/brand';
 import { colors, fonts, motion, shadow, spacing, typeScale } from '../src/constants/design';
 
 // Local microphone silhouette (replaces the microphone emoji).
@@ -56,9 +58,8 @@ export default function HomeScreen() {
 
   // Respect the system reduced-motion preference.
   useEffect(() => {
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      (enabled) => setReducedMotion(enabled),
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) =>
+      setReducedMotion(enabled)
     );
     AccessibilityInfo.isReduceMotionEnabled().then(setReducedMotion);
     return () => subscription.remove();
@@ -162,7 +163,6 @@ export default function HomeScreen() {
     if (reducedMotion) return;
   };
 
-
   const STATUS_LABELS: Record<string, string> = {
     idle: 'Idle',
     recording: 'Listening\u2026',
@@ -172,27 +172,21 @@ export default function HomeScreen() {
     success: 'Done',
     error: 'Error',
   };
-  const statusLabel = useMemo(
-    () => STATUS_LABELS[voice] ?? STATUS_LABELS.idle,
-    [voice],
-  );
+  const statusLabel = useMemo(() => STATUS_LABELS[voice] ?? STATUS_LABELS.idle, [voice]);
 
   const micContainerAnimated = useMemo(
     () => ({
       opacity: micOpacity,
       transform: [{ translateY: micEnterY }, { scale: pressScale }],
     }),
-    [micOpacity, micEnterY, pressScale],
+    [micOpacity, micEnterY, pressScale]
   );
-  const micImageAnimated = useMemo(
-    () => ({ transform: [{ scale: breathScale }] }),
-    [breathScale],
-  );
+  const micImageAnimated = useMemo(() => ({ transform: [{ scale: breathScale }] }), [breathScale]);
 
   if (!fontsReady) {
     return (
       <Animated.View style={[styles.splash, { opacity: headerOpacity }]}>
-        <Text style={styles.splashBrand}>SMSM</Text>
+        <Image source={brand.logo} style={styles.splashBrand} resizeMode="contain" />
       </Animated.View>
     );
   }
@@ -201,13 +195,10 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.brandArea}>
-          <Animated.Text
-            style={[typeScale.brand, { opacity: headerOpacity }]}
-            numberOfLines={1}
-          >
+          <Animated.Text style={[typeScale.brand, { opacity: headerOpacity }]} numberOfLines={1}>
             SMSM
           </Animated.Text>
-          <Text style={styles.tagline}>Your Voice, Your Actions.</Text>
+          <Text style={styles.tagline}>Speak Less, Get More</Text>
         </View>
         <TouchableOpacity
           style={styles.settingsButton}
@@ -242,12 +233,8 @@ export default function HomeScreen() {
 
       <View style={styles.feedbackWrapper}>
         <Animated.View style={[styles.feedback, { opacity: statusOpacity }]}>
-          <Text style={[typeScale.sectionLabel, styles.feedbackLabel]}>
-            Assistant feedback
-          </Text>
-          <Text style={[typeScale.statusValue, styles.feedbackValue]}>
-            {statusLabel}
-          </Text>
+          <Text style={[typeScale.sectionLabel, styles.feedbackLabel]}>Assistant feedback</Text>
+          <Text style={[typeScale.statusValue, styles.feedbackValue]}>{statusLabel}</Text>
         </Animated.View>
       </View>
     </View>
@@ -266,7 +253,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   splashBrand: {
-    ...typeScale.brand,
+    width: 132,
+    height: 132,
   },
   headerRow: {
     flexDirection: 'row',
@@ -333,4 +321,3 @@ const styles = StyleSheet.create({
     ...typeScale.statusValue,
   },
 });
-
