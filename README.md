@@ -112,6 +112,8 @@ npm run format
 
 See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for the complete implementation roadmap organized into 11 milestones.
 
+See [`docs/RELEASES.md`](./docs/RELEASES.md) for the CI/CD release pipeline documentation.
+
 ## Zero-Cost Development Philosophy
 
 SMSM is developed with a **zero-cost** constraint:
