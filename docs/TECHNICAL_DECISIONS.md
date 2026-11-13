@@ -4,7 +4,7 @@ This document records important architectural decisions and their reasoning.
 
 ## 1. Why React Native + Expo?
 
-**Decision:** Use React Native with Expo framework (SDK 54).
+**Decision:** Use React Native with Expo framework (SDK 58).
 
 **Reasoning:**
 

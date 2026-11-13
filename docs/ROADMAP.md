@@ -19,7 +19,7 @@ This is the primary source of truth for project progress. Update this document w
 **Dependencies:**
 
 - Node.js v24.10.0, npm v11.6.0
-- Expo SDK 54, React Native 0.81.x
+- Expo SDK 58, React Native 0.88.x
 - Xcode (for iOS), Java JDK (for Android)
 
 **Expected deliverables:**
@@ -43,7 +43,7 @@ This is the primary source of truth for project progress. Update this document w
 
 **Potential risks:**
 
-- Expo Router compatibility with SDK 54 — validated and working
+- Expo Router compatibility with SDK 58 — validated and working
 - TypeScript 5.x configuration — resolved with standard `expo/tsconfig.base`
 - ESLint v9 flat config migration — resolved with `eslint.config.mjs`
 

@@ -8,7 +8,7 @@ A voice-controlled mobile assistant for Android and iOS.
 
 **Foundation phase complete.** The project foundation has been established including:
 
-- React Native + Expo (SDK 54) + TypeScript project setup
+- React Native + Expo (SDK 58) + TypeScript project setup
 - Expo Router navigation configured
 - ESLint + Prettier + TypeScript strict mode configured
 - Feature-oriented folder structure created
@@ -39,10 +39,10 @@ A voice-controlled mobile assistant for Android and iOS.
 
 | Layer                | Technology   | Version  |
 | -------------------- | ------------ | -------- |
-| Framework            | React Native | 0.81.5   |
-| Development Platform | Expo         | ~54.0.0  |
-| Language             | TypeScript   | ~5.9.2   |
-| Navigation           | Expo Router  | ~6.0.24  |
+| Framework            | React Native | 0.88.1   |
+| Development Platform | Expo         | ^58.0.25 |
+| Language             | TypeScript   | ~6.0.3   |
+| Navigation           | Expo Router  | ~58.0.31 |
 | State Management     | Zustand      | ^5.1.0   |
 | Validation           | Zod          | ^3.25.76 |
 | Linting              | ESLint       | ^9.0.0   |
