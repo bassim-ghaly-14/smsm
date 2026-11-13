@@ -8,7 +8,7 @@ A voice-controlled mobile assistant for Android and iOS.
 
 **Foundation phase complete.** The project foundation has been established including:
 
-- React Native + Expo (SDK 58) + TypeScript project setup
+- React Native + Expo (SDK 54) + TypeScript project setup
 - Expo Router navigation configured
 - ESLint + Prettier + TypeScript strict mode configured
 - Feature-oriented folder structure created
@@ -37,16 +37,16 @@ A voice-controlled mobile assistant for Android and iOS.
 
 ## Tech Stack
 
-| Layer | Technology | Version |
-|---|---|---|
-| Framework | React Native | 0.88.1 |
-| Development Platform | Expo | ~58.0.25 |
-| Language | TypeScript | ~6.0.3 |
-| Navigation | Expo Router | ^4.0.22 |
-| State Management | Zustand | ^5.1.0 |
-| Validation | Zod | ^3.25.76 |
-| Linting | ESLint | ^9.39.5 |
-| Formatting | Prettier | ^3.10.1 |
+| Layer                | Technology   | Version  |
+| -------------------- | ------------ | -------- |
+| Framework            | React Native | 0.81.5   |
+| Development Platform | Expo         | ~54.0.0  |
+| Language             | TypeScript   | ~5.9.2   |
+| Navigation           | Expo Router  | ~6.0.24  |
+| State Management     | Zustand      | ^5.1.0   |
+| Validation           | Zod          | ^3.25.76 |
+| Linting              | ESLint       | ^9.0.0   |
+| Formatting           | Prettier     | ^3.0.0   |
 
 ## Architecture Overview
 
@@ -91,22 +91,22 @@ npm run format
 
 ## Current Implementation Status
 
-| Component | Status |
-|---|---|
-| Project foundation | ✅ Complete |
-| TypeScript strict mode | ✅ Configured |
-| ESLint + Prettier | ✅ Configured |
-| Expo Router navigation | ✅ Configured |
-| Initial UI shell | ✅ Complete |
-| Zustand store skeleton | ✅ Created |
-| Type definitions | ✅ Created |
-| Voice recognition | ❌ Not implemented |
-| Intent engine | ❌ Not implemented |
-| Contacts & calling | ❌ Not implemented |
-| Quran player | ❌ Not implemented |
-| Application launcher | ❌ Not implemented |
-| Maps & navigation | ❌ Not implemented |
-| Video search | ❌ Not implemented |
+| Component              | Status             |
+| ---------------------- | ------------------ |
+| Project foundation     | ✅ Complete        |
+| TypeScript strict mode | ✅ Configured      |
+| ESLint + Prettier      | ✅ Configured      |
+| Expo Router navigation | ✅ Configured      |
+| Initial UI shell       | ✅ Complete        |
+| Zustand store skeleton | ✅ Created         |
+| Type definitions       | ✅ Created         |
+| Voice recognition      | ❌ Not implemented |
+| Intent engine          | ❌ Not implemented |
+| Contacts & calling     | ❌ Not implemented |
+| Quran player           | ❌ Not implemented |
+| Application launcher   | ❌ Not implemented |
+| Maps & navigation      | ❌ Not implemented |
+| Video search           | ❌ Not implemented |
 
 ## Roadmap
 
@@ -129,10 +129,12 @@ SMSM is developed with a **zero-cost** constraint:
 ## Platform Limitations
 
 ### Android
+
 - Local APK generation and direct installation supported.
 - Google Play publishing not part of zero-cost plan (developer registration requires fee).
 
 ### iOS
+
 - Local development and testing using Xcode.
 - Personal device testing using free Apple account signing.
 - Personal Team signing: provisioning profiles valid for 7 days, must be renewed.

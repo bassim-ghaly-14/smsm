@@ -4,15 +4,17 @@ This document records important architectural decisions and their reasoning.
 
 ## 1. Why React Native + Expo?
 
-**Decision:** Use React Native with Expo framework (SDK 58).
+**Decision:** Use React Native with Expo framework (SDK 54).
 
 **Reasoning:**
+
 - Enables cross-platform development for Android and iOS from a single TypeScript codebase.
 - Expo provides managed workflow with simplified native module configuration.
 - Over-the-air updates (via Expo) are supported for future distribution.
 - Large ecosystem of compatible libraries.
 
 **Alternatives considered:**
+
 - **Pure React Native (bare)**: More complex native setup, requires manual configuration of native modules.
 - **Flutter**: Would require Dart expertise, different ecosystem.
 - **Native (Swift/Kotlin)**: Requires maintaining two separate codebases.
@@ -24,12 +26,14 @@ This document records important architectural decisions and their reasoning.
 **Decision:** Use TypeScript with strict mode enabled.
 
 **Reasoning:**
+
 - Catches type errors at compile time, reducing runtime bugs.
 - Better IDE support and developer experience.
 - Self-documenting code through explicit types and interfaces.
 - Required by project coding standards (`no any` unless documented).
 
 **Alternatives considered:**
+
 - **Plain JavaScript**: No type safety, more runtime errors.
 - **Flow**: Smaller ecosystem, less IDE support than TypeScript.
 
@@ -40,12 +44,14 @@ This document records important architectural decisions and their reasoning.
 **Decision:** All processing happens on the device. No backend, no cloud sync.
 
 **Reasoning:**
+
 - **Zero-cost requirement**: No paid backend hosting, no paid databases, no cloud infrastructure.
 - **Privacy**: User voice data and contacts never leave the device.
 - **Offline capability**: Assistant works without internet connection.
 - **Simplicity**: No backend API design, authentication, or database management.
 
 **Alternatives considered:**
+
 - **Backend + cloud sync**: Violates zero-cost requirement, adds complexity.
 - **Hybrid (some local, some cloud)**: Still incurs costs and complexity.
 
@@ -56,6 +62,7 @@ This document records important architectural decisions and their reasoning.
 **Decision:** Start with a local rules-based intent engine instead of an LLM.
 
 **Reasoning:**
+
 - **Zero-cost**: No paid LLM APIs (OpenAI, etc.).
 - **Predictable**: Rules are deterministic and easy to debug.
 - **Transparent**: Intent classification logic is visible and auditable.
@@ -63,6 +70,7 @@ This document records important architectural decisions and their reasoning.
 - **Sufficient for MVP**: The MVP has a limited, well-defined set of intents.
 
 **Alternatives considered:**
+
 - **Local LLM**: Would require significant device resources, model distribution, and may not be necessary for the MVP's limited intent set.
 - **Cloud LLM API**: Violates zero-cost requirement.
 
@@ -73,12 +81,14 @@ This document records important architectural decisions and their reasoning.
 **Decision:** Whisper.cpp is the preferred speech recognition candidate but requires technical validation before integration.
 
 **Reasoning:**
+
 - **Zero-cost**: Open source, no API fees.
 - **Local**: Runs entirely on device.
 - **Multilingual**: Supports Arabic and English.
 - **Uncertainty**: Integration complexity with React Native/Expo (native modules, C++ bridging, model size, memory usage) is not yet proven.
 
 **Plan:**
+
 - Document integration requirements in Milestone 2.
 - Evaluate native module bridging (Kotlin/Swift + C++).
 - Assess model size and memory impact on target devices.
@@ -91,11 +101,13 @@ This document records important architectural decisions and their reasoning.
 **Decision:** Zero-cost architecture is a permanent requirement.
 
 **Reasoning:**
+
 - The user explicitly refuses paid APIs, subscription services, paid AI providers, paid backend hosting, and any service that can unexpectedly generate charges.
 - Free trials and limited free tiers are not acceptable.
 - The architecture must remain free indefinitely, not just during development.
 
 **Prohibited services:**
+
 - OpenAI API, paid LLM APIs
 - Supabase, Firebase paid services
 - Paid transcription APIs
@@ -108,6 +120,7 @@ This document records important architectural decisions and their reasoning.
 **Decision:** The MVP operates entirely on-device with no backend.
 
 **Reasoning:**
+
 - All MVP features (contacts, Quran player, app launcher, maps, video search) can be implemented using device-native capabilities.
 - No multi-user features, no data sharing, no server-side processing required.
 - Eliminates the need for authentication, API design, database management, and hosting costs.
@@ -119,6 +132,7 @@ This document records important architectural decisions and their reasoning.
 **Decision:** Platform differences are documented and handled separately.
 
 **Reasoning:**
+
 - **Opening third-party apps**: Android uses Intents/package names; iOS uses URL schemes/Universal Links.
 - **Contact access**: Different permission models and APIs.
 - **Phone dialer**: Android uses `Intent.ACTION_DIAL`; iOS uses `tel:` URL scheme.
@@ -135,6 +149,7 @@ This document records important architectural decisions and their reasoning.
 **Decision:** All actions must come from a predefined, validated Action Registry.
 
 **Reasoning:**
+
 - **Security**: Prevents arbitrary code execution — a critical safety requirement for a voice-controlled assistant.
 - **Predictability**: Every action is known, tested, and documented.
 - **Validation**: Zod schemas validate action inputs before execution.
