@@ -334,17 +334,69 @@ jobs:
           name: SMSM-iOS-Simulator
           path: ios-build
 
+
+      - name: Android artifact diagnostics
+        run: |
+          set -e
+
+          echo "=== Android Artifact Diagnostics ==="
+          echo "Artifact names being consumed:"
+          if [ "${{ needs.android-signing-check.outputs.signing_configured }}" = "true" ]; then
+            echo "  Android: SMSM-Android (signed release)"
+          else
+            echo "  Android: SMSM-Android-nosign-validation (debug validation only)"
+          fi
+          echo ""
+          echo "Download destination: android-build"
+          echo ""
+          echo "Downloaded directory structure (recursive):"
+          find android-build -print 2>/dev/null | sort | sed 's|^|  |'
+          echo ""
+          echo "APK files found (recursive) with sizes:"
+          find android-build -type f -name '*.apk' -exec ls -la {} \; 2>/dev/null | sort
+
       - name: Verify Android APK exists
         run: |
           set -e
-          if [ -f android-build/android/app/build/outputs/apk/release/SMSM-Android.apk ]; then
-            echo "Android signed release APK found."
-          elif [ -f android-build/android/app/build/outputs/apk/debug/SMSM-Android-validation.apk ]; then
-            echo "Android debug validation APK found."
-          else
+
+          echo "=== Android APK Verification ==="
+
+          # Count APK files recursively in the downloaded artifact
+          APK_COUNT=$(find android-build -type f -name '*.apk' -print 2>/dev/null | wc -l)
+          echo "Total APK files found: ${APK_COUNT}"
+
+          if [ "${APK_COUNT}" -eq 0 ]; then
             echo "No Android APK found in artifact. Aborting release." >&2
             exit 1
           fi
+
+          # List all APKs with their sizes
+          echo "APK files discovered (recursive):"
+          find android-build -type f -name '*.apk' -exec ls -la {} \; 2>/dev/null | sort
+
+          ANDROID_APK=""
+          if [ "${{ needs.android-signing-check.outputs.signing_configured }}" = "true" ]; then
+            # Signed release variant: look for SMSM-Android.apk
+            if [ -f "android-build/SMSM-Android/SMSM-Android.apk" ]; then
+              ANDROID_APK="android-build/SMSM-Android/SMSM-Android.apk"
+              echo "Android signed release APK found: ${ANDROID_APK}"
+            else
+              echo "Android signed release APK not found at android-build/SMSM-Android/SMSM-Android.apk" >&2
+              exit 1
+            fi
+          else
+            # Debug validation variant: look for SMSM-Android-validation.apk
+            if [ -f "android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" ]; then
+              ANDROID_APK="android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk"
+              echo "Android debug validation APK found: ${ANDROID_APK}"
+            else
+              echo "Android debug validation APK not found at android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" >&2
+              exit 1
+            fi
+          fi
+
+          echo "ANDROID_APK=${ANDROID_APK}" >> $GITHUB_ENV
+          echo "Android APK verified. Path exported to ANDROID_APK."
 
       - name: Ensure zip utility is available
         run: |
@@ -352,6 +404,42 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y -qq zip
           fi
+
+      - name: Stage Android release asset
+        run: |
+          set -e
+
+          echo "=== Android Release Asset Staging ==="
+          echo "Source APK: ${ANDROID_APK}"
+
+          if [ -z "${ANDROID_APK}" ]; then
+            echo "ANDROID_APK is not set. The verification step must run first." >&2
+            exit 1
+          fi
+
+          if [ ! -f "${ANDROID_APK}" ]; then
+            echo "Staged APK source not found: ${ANDROID_APK}" >&2
+            exit 1
+          fi
+
+          STAGED_DIR="android-build-staging"
+          STAGE_APK="${STAGED_DIR}/SMSM-Android.apk"
+
+          rm -rf "${STAGED_DIR}"
+          mkdir -p "${STAGED_DIR}"
+
+          cp "${ANDROID_APK}" "${STAGE_APK}"
+
+          echo "Staged APK: ${STAGE_APK}"
+          ls -la "${STAGED_DIR}"
+
+          if [ ! -s "${STAGE_APK}" ]; then
+            echo "Staged APK is empty. Aborting release." >&2
+            exit 1
+          fi
+
+          echo "ANDROID_STAGED_APK=${STAGE_APK}" >> $GITHUB_ENV
+          echo "Android release asset staged successfully."
 
       - name: Locate and package iOS simulator .app
         run: |
@@ -390,7 +478,7 @@ jobs:
           - Build date: ${BUILD_DATE}
 
           ### Build assets
-          - Android: android-build/android/app/build/outputs/apk/release/SMSM-Android.apk (signed release) or android-build/android/app/build/outputs/apk/debug/SMSM-Android-validation.apk (debug validation)
+           - Android: android-build-staging/SMSM-Android.apk (staged release APK)
           - iOS: ios-build/SMSM-iOS-Simulator.zip (simulator .app, simulator only)
 
           > This is an automated prerelease. It is not a stable production release and does not update the latest stable release.
@@ -400,22 +488,35 @@ jobs:
         run: |
           SHORT_SHA="${{ steps.tag.outputs.short_sha }}"
           TAG="smsm-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
-          ANDROID_ASSET=""
-          if [ -f "android-build/android/app/build/outputs/apk/release/SMSM-Android.apk" ]; then
-            ANDROID_ASSET="android-build/android/app/build/outputs/apk/release/SMSM-Android.apk"
-          elif [ -f "android-build/android/app/build/outputs/apk/debug/SMSM-Android-validation.apk" ]; then
-            ANDROID_ASSET="android-build/android/app/build/outputs/apk/debug/SMSM-Android-validation.apk"
-          else
-            echo "No Android APK found. Aborting release." >&2
+
+          ANDROID_ASSET="${ANDROID_STAGED_APK}"
+          IOS_ASSET="ios-build/SMSM-iOS-Simulator.zip"
+
+          if [ -z "${ANDROID_ASSET}" ]; then
+            echo "Android staged APK not found. Aborting release." >&2
             exit 1
           fi
+
+          if [ ! -f "${ANDROID_ASSET}" ]; then
+            echo "Staged Android APK not found: ${ANDROID_ASSET}" >&2
+            exit 1
+          fi
+
+          if [ ! -f "${IOS_ASSET}" ]; then
+            echo "iOS simulator ZIP not found: ${IOS_ASSET}" >&2
+            exit 1
+          fi
+
+          echo "Android asset to attach: ${ANDROID_ASSET}"
+          echo "iOS asset to attach: ${IOS_ASSET}"
+
           gh release create "$TAG" \
             --target "${GITHUB_SHA}" \
             --title "SMSM Build #${GITHUB_RUN_NUMBER}" \
             --notes-file release-notes.txt \
             --prerelease \
             "$ANDROID_ASSET" \
-            "ios-build/SMSM-iOS-Simulator.zip"
+            "$IOS_ASSET"
 
       - name: Verify release published
         run: |

@@ -1,0 +1,524 @@
+name: SMSM CI/CD
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref_type == 'tag' && 'tag' || 'branch' }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: TypeScript type-check
+        run: ./node_modules/.bin/tsc --noEmit
+
+      - name: ESLint
+        run: ./node_modules/.bin/eslint . --ext .ts,.tsx
+
+      - name: Expo Doctor
+        run: npx expo-doctor
+
+  android-signing-check:
+    name: Check Android signing configuration
+    runs-on: ubuntu-latest
+    needs: quality
+    outputs:
+      signing_configured: ${{ steps.check-signing.outputs.signing_configured }}
+    steps:
+      - id: check-signing
+        name: Determine Android signing path
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            missing=0
+            for secret in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+              value="${!secret}"
+              if [ -z "$value" ]; then
+                echo "ERROR: Required signing secret '$secret' is not configured." >&2
+                echo "Either configure all four Android signing secrets, or none." >&2
+                missing=1
+              fi
+            done
+            if [ "$missing" -eq 1 ]; then
+              exit 1
+            fi
+            echo "Android release signing is configured. Signed release APK path will be used." >> $GITHUB_STEP_SUMMARY
+            echo "signing_configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "No Android release keystore configured. Debug validation build will be used." >> $GITHUB_STEP_SUMMARY
+            echo "signing_configured=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+  android-build:
+    name: Android build
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+      - android-signing-check
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b36c23c0d998641eff861008f374ee103c25ac73 # v4.4.0
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Install Android build tools
+        run: sdkmanager --install "build-tools;35.0.0"
+
+      - name: Generate Android project (Expo Prebuild)
+        run: ./node_modules/.bin/expo prebuild --clean -p android
+
+      # ---------- Path A: Signed release APK ----------
+      - name: Write release keystore
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: |
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > android/app/smsm-release-keystore.jks
+          echo "Keystore written ($(wc -c < android/app/smsm-release-keystore.jks) bytes)"
+          chmod 600 android/app/smsm-release-keystore.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Patch release signing configuration
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: node scripts/prepare-android-signing.js
+
+      - name: Build release APK
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: cd android && ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Verify APK signature
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APKSIGNER="$(find "$SDK_ROOT" -path '*build-tools/*/apksigner' -type f | head -n 1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "apksigner not found under $SDK_ROOT/build-tools" >&2
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify package ID (release)
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          AAPT="$(find "$SDK_ROOT" -path '*build-tools/*/aapt' -type f | head -n 1)"
+          if [ -z "$AAPT" ]; then
+            echo "aapt not found" >&2
+            exit 1
+          fi
+          PACKAGE_ID="$("$AAPT" dump badging android/app/build/outputs/apk/release/app-release.apk | grep -oE 'package: name=[^ ]+' | cut -d'=' -f2 | tr -d "'")"
+          if [ "$PACKAGE_ID" != "com.smsm.app" ]; then
+            echo "Unexpected package ID: $PACKAGE_ID" >&2
+            exit 1
+          fi
+          echo "Package ID verified: $PACKAGE_ID"
+
+      - name: Prepare signed release artifact
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/SMSM-Android.apk
+          echo "SMSM-Android.apk ready (signed release)"
+
+      - name: Upload signed release APK
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: SMSM-Android
+          path: android/app/build/outputs/apk/release/SMSM-Android.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # ---------- Path B: Debug validation APK ----------
+      - name: Build debug validation APK
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        run: cd android && ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Verify debug APK exists
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        run: |
+          if [ ! -f android/app/build/outputs/apk/debug/app-debug.apk ]; then
+            echo "Debug APK not found at expected location" >&2
+            exit 1
+          fi
+
+      - name: Verify package ID (debug)
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          AAPT="$(find "$SDK_ROOT" -path '*build-tools/*/aapt' -type f | head -n 1)"
+          if [ -z "$AAPT" ]; then
+            echo "aapt not found" >&2
+            exit 1
+          fi
+          PACKAGE_ID="$("$AAPT" dump badging android/app/build/outputs/apk/debug/app-debug.apk | grep -oE 'package: name=[^ ]+' | cut -d'=' -f2 | tr -d "'")"
+          if [ "$PACKAGE_ID" != "com.smsm.app" ]; then
+            echo "Unexpected package ID: $PACKAGE_ID" >&2
+            exit 1
+          fi
+          echo "Package ID verified: $PACKAGE_ID"
+
+      - name: Prepare debug validation artifact
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/SMSM-Android-validation.apk
+          echo "SMSM-Android-validation.apk ready (development validation only, not a production release)"
+
+      - name: Upload debug validation APK
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: SMSM-Android-nosign-validation
+          path: android/app/build/outputs/apk/debug/SMSM-Android-validation.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  ios-simulator-build:
+    name: iOS simulator build
+    runs-on: macos-latest
+    needs: quality
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Generate iOS project (Expo Prebuild)
+        run: ./node_modules/.bin/expo prebuild --clean -p ios
+
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods -N
+
+      - name: Install CocoaPods dependencies
+        run: cd ios && pod install
+
+      - name: Resolve simulator UDID
+        id: simulator
+        run: |
+          SIM_LINE="$(xcrun simctl list devices available | grep 'iPhone' | head -n 1)"
+          if [ -z "$SIM_LINE" ]; then
+            echo "No iPhone simulator available on the macOS runner." >&2
+            exit 1
+          fi
+          SIM_UDID="$(echo "$SIM_LINE" | grep -oE '[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}' | head -n 1)"
+          SIM_NAME="$(echo "$SIM_LINE" | sed -E 's/\([^)]*\)//' | sed 's/  */ /g' | sed 's/^ //' | sed 's/ $//')"
+          if [ -z "$SIM_UDID" ]; then
+            echo "Could not resolve simulator UDID from: $SIM_LINE" >&2
+            exit 1
+          fi
+          echo "simulator_udid=$SIM_UDID" >> $GITHUB_OUTPUT
+          echo "simulator_name=$SIM_NAME" >> $GITHUB_OUTPUT
+          echo "Using simulator: $SIM_NAME ($SIM_UDID)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Build iOS simulator .app
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: |
+          xcodebuild -workspace ios/SMSM.xcworkspace \
+            -scheme SMSM \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.simulator_udid }}" \
+            -derivedDataPath ios/build \
+            build
+
+      - name: Locate simulator .app
+        id: locate-app
+        run: |
+          APP_PATH="$(find ios/build -name 'SMSM.app' -type d -maxdepth 6 2>/dev/null | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "Simulator .app not found after build" >&2
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "Simulator app found: $APP_PATH" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload iOS simulator .app
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: SMSM-iOS-Simulator
+          path: ${{ steps.locate-app.outputs.app_path }}
+          if-no-files-found: error
+          retention-days: 30
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - android-build
+      - ios-simulator-build
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Download Android signed release APK artifact
+        if: needs.android-signing-check.outputs.signing_configured == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: SMSM-Android
+          path: android-build
+
+      - name: Download Android debug validation APK artifact
+        if: needs.android-signing-check.outputs.signing_configured == 'false'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: SMSM-Android-nosign-validation
+          path: android-build
+
+      - name: Download iOS simulator .app artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: SMSM-iOS-Simulator
+          path: ios-build
+
+
+      - name: Android artifact diagnostics
+        run: |
+          set -e
+
+          echo "=== Android Artifact Diagnostics ==="
+          echo "Artifact names being consumed:"
+          if [ "${{ needs.android-signing-check.outputs.signing_configured }}" = "true" ]; then
+            echo "  Android: SMSM-Android (signed release)"
+          else
+            echo "  Android: SMSM-Android-nosign-validation (debug validation only)"
+          fi
+          echo ""
+          echo "Download destination: android-build"
+          echo ""
+          echo "Downloaded directory structure (recursive):"
+          find android-build -print 2>/dev/null | sort | sed 's|^|  |'
+          echo ""
+          echo "APK files found (recursive) with sizes:"
+          find android-build -type f -name '*.apk' -exec ls -la {} \; 2>/dev/null | sort
+
+      - name: Verify Android APK exists
+        run: |
+          set -e
+
+          echo "=== Android APK Verification ==="
+
+          # Count APK files recursively in the downloaded artifact
+          APK_COUNT=$(find android-build -type f -name '*.apk' -print 2>/dev/null | wc -l)
+          echo "Total APK files found: ${APK_COUNT}"
+
+          if [ "${APK_COUNT}" -eq 0 ]; then
+            echo "No Android APK found in artifact. Aborting release." >&2
+            exit 1
+          fi
+
+          # List all APKs with their sizes
+          echo "APK files discovered (recursive):"
+          find android-build -type f -name '*.apk' -exec ls -la {} \; 2>/dev/null | sort
+
+          ANDROID_APK=""
+          if [ "${{ needs.android-signing-check.outputs.signing_configured }}" = "true" ]; then
+            # Signed release variant: look for SMSM-Android.apk
+            if [ -f "android-build/SMSM-Android/SMSM-Android.apk" ]; then
+              ANDROID_APK="android-build/SMSM-Android/SMSM-Android.apk"
+              echo "Android signed release APK found: ${ANDROID_APK}"
+            else
+              echo "Android signed release APK not found at android-build/SMSM-Android/SMSM-Android.apk" >&2
+              exit 1
+            fi
+          else
+            # Debug validation variant: look for SMSM-Android-validation.apk
+            if [ -f "android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" ]; then
+              ANDROID_APK="android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk"
+              echo "Android debug validation APK found: ${ANDROID_APK}"
+            else
+              echo "Android debug validation APK not found at android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" >&2
+              exit 1
+            fi
+          fi
+
+          echo "ANDROID_APK=${ANDROID_APK}" >> $GITHUB_ENV
+          echo "Android APK verified. Path exported to ANDROID_APK."
+
+      - name: Ensure zip utility is available
+        run: |
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq zip
+          fi
+
+      - name: Stage Android release asset
+        run: |
+          set -e
+
+          echo "=== Android Release Asset Staging ==="
+          echo "Source APK: ${ANDROID_APK}"
+
+          if [ -z "${ANDROID_APK}" ]; then
+            echo "ANDROID_APK is not set. The verification step must run first." >&2
+            exit 1
+          fi
+
+          if [ ! -f "${ANDROID_APK}" ]; then
+            echo "Staged APK source not found: ${ANDROID_APK}" >&2
+            exit 1
+          fi
+
+          STAGED_DIR="android-build-staging"
+          STAGE_APK="${STAGED_DIR}/SMSM-Android.apk"
+
+          rm -rf "${STAGED_DIR}"
+          mkdir -p "${STAGED_DIR}"
+
+          cp "${ANDROID_APK}" "${STAGE_APK}"
+
+          echo "Staged APK: ${STAGE_APK}"
+          ls -la "${STAGED_DIR}"
+
+          if [ ! -s "${STAGE_APK}" ]; then
+            echo "Staged APK is empty. Aborting release." >&2
+            exit 1
+          fi
+
+          echo "ANDROID_STAGED_APK=${STAGE_APK}" >> $GITHUB_ENV
+          echo "Android release asset staged successfully."
+
+      - name: Locate and package iOS simulator .app
+        run: |
+          set -e
+          APP_PATH="$(find ios-build -name 'SMSM.app' -type d -maxdepth 8 2>/dev/null | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "iOS simulator .app not found after download. Aborting release." >&2
+            exit 1
+          fi
+          echo "iOS simulator .app found: $APP_PATH"
+          cd "$(dirname "$APP_PATH")"
+          zip -r "../../../SMSM-iOS-Simulator.zip" "$(basename "$APP_PATH")"
+          echo "iOS simulator ZIP created at ios-build/SMSM-iOS-Simulator.zip"
+
+      - name: Compute release tag
+        id: tag
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "tag=smsm-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build release notes
+        run: |
+          SHORT_SHA="${{ steps.tag.outputs.short_sha }}"
+          TAG="smsm-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+          BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          cat > release-notes.txt <<EOF
+          SMSM Build #${GITHUB_RUN_NUMBER}
+
+          Automated build published from commit ${GITHUB_SHA}.
+
+          ### Details
+          - Tag: ${TAG}
+          - Commit: ${GITHUB_SHA} (${SHORT_SHA})
+          - Run: #${GITHUB_RUN_NUMBER} (attempt #${GITHUB_RUN_ATTEMPT})
+          - Build date: ${BUILD_DATE}
+
+          ### Build assets
+           - Android: android-build-staging/SMSM-Android.apk (staged release APK)
+          - iOS: ios-build/SMSM-iOS-Simulator.zip (simulator .app, simulator only)
+
+          > This is an automated prerelease. It is not a stable production release and does not update the latest stable release.
+          EOF
+
+      - name: Create GitHub release
+        run: |
+          SHORT_SHA="${{ steps.tag.outputs.short_sha }}"
+          TAG="smsm-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
+
+          ANDROID_ASSET="${ANDROID_STAGED_APK}"
+          IOS_ASSET="ios-build/SMSM-iOS-Simulator.zip"
+
+          if [ -z "${ANDROID_ASSET}" ]; then
+            echo "Android staged APK not found. Aborting release." >&2
+            exit 1
+          fi
+
+          if [ ! -f "${ANDROID_ASSET}" ]; then
+            echo "Staged Android APK not found: ${ANDROID_ASSET}" >&2
+            exit 1
+          fi
+
+          if [ ! -f "${IOS_ASSET}" ]; then
+            echo "iOS simulator ZIP not found: ${IOS_ASSET}" >&2
+            exit 1
+          fi
+
+          echo "Android asset to attach: ${ANDROID_ASSET}"
+          echo "iOS asset to attach: ${IOS_ASSET}"
+
+          gh release create "$TAG" \
+            --target "${GITHUB_SHA}" \
+            --title "SMSM Build #${GITHUB_RUN_NUMBER}" \
+            --notes-file release-notes.txt \
+            --prerelease \
+            "$ANDROID_ASSET" \
+            "$IOS_ASSET"
+
+      - name: Verify release published
+        run: |
+          gh release view "${{ steps.tag.outputs.tag }}" --json name,tag,prerelease,targetCommit,publishedAt
+
