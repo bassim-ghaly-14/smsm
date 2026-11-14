@@ -305,6 +305,7 @@ jobs:
     needs:
       - android-build
       - ios-simulator-build
+      - android-signing-check
     if: github.event_name == 'push'
     permissions:
       contents: write
@@ -376,24 +377,31 @@ jobs:
 
           ANDROID_APK=""
           if [ "${{ needs.android-signing-check.outputs.signing_configured }}" = "true" ]; then
-            # Signed release variant: look for SMSM-Android.apk
-            if [ -f "android-build/SMSM-Android/SMSM-Android.apk" ]; then
-              ANDROID_APK="android-build/SMSM-Android/SMSM-Android.apk"
+            # Signed release variant: artifact SMSM-Android is extracted directly to android-build/SMSM-Android.apk
+            ANDROID_APK="android-build/SMSM-Android.apk"
+            if [ -f "${ANDROID_APK}" ]; then
               echo "Android signed release APK found: ${ANDROID_APK}"
             else
-              echo "Android signed release APK not found at android-build/SMSM-Android/SMSM-Android.apk" >&2
+              echo "Android signed release APK not found at ${ANDROID_APK}" >&2
               exit 1
             fi
           else
-            # Debug validation variant: look for SMSM-Android-validation.apk
-            if [ -f "android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" ]; then
-              ANDROID_APK="android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk"
+            # Debug validation variant: artifact SMSM-Android-nosign-validation is extracted directly to android-build/SMSM-Android-validation.apk
+            ANDROID_APK="android-build/SMSM-Android-validation.apk"
+            if [ -f "${ANDROID_APK}" ]; then
               echo "Android debug validation APK found: ${ANDROID_APK}"
             else
-              echo "Android debug validation APK not found at android-build/SMSM-Android-nosign-validation/SMSM-Android-validation.apk" >&2
+              echo "Android debug validation APK not found at ${ANDROID_APK}" >&2
               exit 1
             fi
           fi
+
+          # Verify the selected APK exists and is non-empty
+          if [ ! -s "${ANDROID_APK}" ]; then
+            echo "Android APK is missing or empty: ${ANDROID_APK}" >&2
+            exit 1
+          fi
+          echo "Android APK size: $(wc -c < "${ANDROID_APK}") bytes"
 
           echo "ANDROID_APK=${ANDROID_APK}" >> $GITHUB_ENV
           echo "Android APK verified. Path exported to ANDROID_APK."
@@ -423,7 +431,9 @@ jobs:
           fi
 
           STAGED_DIR="android-build-staging"
-          STAGE_APK="${STAGED_DIR}/SMSM-Android.apk"
+          # Preserve the build-type distinction in the staged filename:
+          # signed release -> SMSM-Android.apk, validation -> SMSM-Android-validation.apk
+          STAGE_APK="${STAGED_DIR}/$(basename "${ANDROID_APK}")"
 
           rm -rf "${STAGED_DIR}"
           mkdir -p "${STAGED_DIR}"
@@ -451,7 +461,7 @@ jobs:
           fi
           echo "iOS simulator .app found: $APP_PATH"
           cd "$(dirname "$APP_PATH")"
-          zip -r "../../../SMSM-iOS-Simulator.zip" "$(basename "$APP_PATH")"
+          zip -r "SMSM-iOS-Simulator.zip" "$(basename "$APP_PATH")"
           echo "iOS simulator ZIP created at ios-build/SMSM-iOS-Simulator.zip"
 
       - name: Compute release tag
@@ -466,6 +476,7 @@ jobs:
           SHORT_SHA="${{ steps.tag.outputs.short_sha }}"
           TAG="smsm-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${SHORT_SHA}"
           BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          ANDROID_ASSET_NAME="$(basename "${ANDROID_STAGED_APK}")"
           cat > release-notes.txt <<EOF
           SMSM Build #${GITHUB_RUN_NUMBER}
 
@@ -478,7 +489,7 @@ jobs:
           - Build date: ${BUILD_DATE}
 
           ### Build assets
-           - Android: android-build-staging/SMSM-Android.apk (staged release APK)
+          - Android: android-build-staging/${ANDROID_ASSET_NAME} (staged Android APK)
           - iOS: ios-build/SMSM-iOS-Simulator.zip (simulator .app, simulator only)
 
           > This is an automated prerelease. It is not a stable production release and does not update the latest stable release.
